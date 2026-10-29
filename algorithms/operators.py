@@ -199,3 +199,33 @@ def crossover(parent1: State, parent2: State, problem: CommuteProblem) -> State:
         base = random.choice((parent1, parent2))
     mutants = get_neighbors(base, problem)
     return random.choice(mutants) if mutants else base
+
+
+def random_state(problem: CommuteProblem) -> State:
+    """
+    Builds a random valid state: a random simple path origin -> destination
+    (randomised DFS with backtracking, so it always finds one if the graph is
+    connected and the path is loop-free by construction) and a random
+    departure time from the discrete time grid.
+    """
+    visited = {problem.origin}
+    path = [problem.origin]
+
+    def dfs(u: str) -> bool:
+        if u == problem.destination:
+            return True
+        nbrs = problem.network.get_neighbors(u)
+        random.shuffle(nbrs)
+        for v in nbrs:
+            if v in visited:
+                continue
+            visited.add(v)
+            path.append(v)
+            if dfs(v):
+                return True
+            path.pop()
+        return False
+
+    if not dfs(problem.origin):
+        raise RuntimeError("No path connects origin to destination.")
+    return State(path=tuple(path), departure_time=random.choice(problem.get_valid_time_domain()))
