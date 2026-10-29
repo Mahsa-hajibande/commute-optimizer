@@ -138,29 +138,64 @@ def get_neighbors(state: State, problem: CommuteProblem) -> List[State]:
     return neighbors
 
 
+def _snap_time(t: float, problem: CommuteProblem) -> float:
+    """Rounds t to the nearest point of the grid t_min + k*t_step and clamps it into [t_min, t_max]."""
+    k = round((t - problem.t_min) / problem.t_step)
+    snapped = problem.t_min + k * problem.t_step
+    if snapped > problem.t_max + 1e-9:
+        snapped -= problem.t_step
+    snapped = max(problem.t_min, min(snapped, problem.t_max))
+    return round(snapped, 2)
+
+
+def _splice_at_junctions(
+    p1: Tuple[str, ...], p2: Tuple[str, ...], problem: CommuteProblem
+) -> List[Tuple[str, ...]]:
+    """
+    One-point topological crossover. For every intermediate node c that appears
+    in both paths: child = p1[:index of c in p1] + p2[index of c in p2:].
+    Only children that pass is_valid_path (simple, connected) are kept: the
+    prefix of p1 and the suffix of p2 may share nodes, which would create a loop.
+    """
+    common = (set(p1) & set(p2)) - {problem.origin, problem.destination}
+    children = []
+    for c in common:
+        child = p1[:p1.index(c)] + p2[p2.index(c):]
+        if problem.is_valid_path(child):
+            children.append(child)
+    return children
+
+
 def crossover(parent1: State, parent2: State, problem: CommuteProblem) -> State:
     """
-    Recombines structural features from two parent configurations into an offspring.
+    Recombines two parents into one valid offspring.
 
-    Guidelines:
-    - Exchange routing sub-paths using shared intermediate waypoints.
-    - Blend or select departure times from the parents in a way that respects valid step intervals.
-    - Verify that the resulting child path remains simple and loop-free.
-
-    Encouraged:
-    - Finding valid topological crossover points where parent routes intersect.
-    - Having a fallback mechanism (e.g., returning a mutated parent) if parents share no junctions.
-
-    Prohibited:
-    - Returning paths with invalid edges or broken topologies.
-
-    Args:
-        parent1: First parent State.
-        parent2: Second parent State.
-        problem: Problem instance providing graph topology and constraints.
-
-    Returns:
-        State: A newly generated child State.
+    Route:  choose a random shared intermediate junction c, and join the first
+            part of one parent's path (origin -> c) with the second part of the
+            other's (c -> destination). Parent order is randomised, so both
+            directions of splicing are possible.
+    Time:   arithmetic mean of both departure times, snapped to the time grid.
+    Fallback: if the parents share no usable junction (e.g. two completely
+            disjoint routes), the child takes the route of a random parent and
+            receives one random neighbor move (mutation), so the output is
+            always valid and never a broken path.
     """
-    # TODO: Implement genetic crossover
-    raise NotImplementedError("Implement crossover in algorithms/operators.py")
+    t_child = _snap_time((parent1.departure_time + parent2.departure_time) / 2.0, problem)
+
+    a, b = (parent1, parent2) if random.random() < 0.5 else (parent2, parent1)
+    candidates = _splice_at_junctions(a.path, b.path, problem)
+    if not candidates:
+        candidates = _splice_at_junctions(b.path, a.path, problem)
+
+    if candidates:
+        child = State(path=random.choice(candidates), departure_time=t_child)
+        if problem.is_valid_state(child):
+            return child
+
+    # Fallback: disjoint parents -> mutated copy of one parent
+    base = random.choice((parent1, parent2))
+    base = State(path=base.path, departure_time=t_child)
+    if not problem.is_valid_state(base):
+        base = random.choice((parent1, parent2))
+    mutants = get_neighbors(base, problem)
+    return random.choice(mutants) if mutants else base
