@@ -3,6 +3,8 @@ algorithms/simulated_annealing.py
 Stochastic optimization governed by a temperature schedule.
 """
 
+import math
+import random
 from typing import Tuple
 from algorithms.base import LocalSearchSolver
 from core.state import State
@@ -22,15 +24,39 @@ class SimulatedAnnealingSolver(LocalSearchSolver):
         """
         Executes Simulated Annealing optimization.
 
-        Guidelines:
-        - Start from a high temperature where worse moves are accepted with significant probability.
-        - Lower temperature over iterations according to a cooling schedule.
-        - Downhill moves (improvements) must always be accepted.
-        - Uphill moves (worse costs) should be accepted probabilistically according to temperature.
-        - Record objective values throughout the run in self.history.
-
-        Prohibited:
-        - Ignoring the temperature parameter or turning this into pure hill climbing.
+        - Start from the free-flow shortest path at t_min.
+        - Each iteration: pick ONE random neighbor, compute dE = f(neighbor) - f(current).
+        - dE <= 0 (improvement) -> always accept.
+        - dE  > 0 (worse)       -> accept with Metropolis probability exp(-dE / T).
+        - Geometric cooling: T <- cooling_rate * T. Stops when T < min_temp
+          or after max_iterations.
+        - self.history holds the best cost found so far at every iteration, and the
+          best state ever visited is returned (not just the final current state).
         """
-        # TODO: Implement Simulated Annealing
-        raise NotImplementedError("Implement solve() in algorithms/simulated_annealing.py")
+        self.history = []
+        current = self.problem.generate_initial_state()
+        cur_cost = self.problem.evaluate(current)
+        best_state, best_cost = current, cur_cost
+        self.history.append(best_cost)
+
+        T = self.initial_temp
+        for _ in range(self.max_iterations):
+            if T < self.min_temp:
+                break
+
+            neighbors = get_neighbors(current, self.problem)
+            if not neighbors:
+                break
+            candidate = random.choice(neighbors)
+            cand_cost = self.problem.evaluate(candidate)
+            delta = cand_cost - cur_cost
+
+            if delta <= 0 or random.random() < math.exp(-delta / T):
+                current, cur_cost = candidate, cand_cost
+                if cur_cost < best_cost:
+                    best_state, best_cost = current, cur_cost
+
+            self.history.append(best_cost)
+            T *= self.cooling_rate
+
+        return best_state, best_cost
