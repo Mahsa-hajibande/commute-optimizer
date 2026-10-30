@@ -159,7 +159,7 @@ def _splice_at_junctions(
     """
     common = (set(p1) & set(p2)) - {problem.origin, problem.destination}
     children = []
-    for c in common:
+    for c in sorted(common):
         child = p1[:p1.index(c)] + p2[p2.index(c):]
         if problem.is_valid_path(child):
             children.append(child)
